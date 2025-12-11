@@ -1,5 +1,4 @@
-use std::cmp::Ordering;
-use std::collections::BinaryHeap;
+use std::collections::VecDeque;
 
 fn main() {
     let machines = std::fs::read_to_string("src/bin/day10.txt")
@@ -15,9 +14,29 @@ fn main() {
 
 #[derive(PartialEq, Debug)]
 struct Machine {
-    pub indicators: Vec<bool>,
-    pub schematics: Vec<Vec<usize>>,
+    pub indicators: u16,
+    pub schematics: Vec<u16>,
     pub requirements: Vec<u32>,
+}
+
+#[inline]
+fn get_bitmask_bool(mask: &[bool]) -> u16 {
+    let mut mask_val: u16 = 0;
+    for (i, val) in mask.iter().enumerate() {
+        if *val {
+            mask_val |= 2u16.pow(i as u32);
+        }
+    }
+    mask_val
+}
+
+#[inline]
+fn get_bitmask_indexes(mask: &[usize]) -> u16 {
+    let mut mask_val: u16 = 0;
+    for i in mask.iter() {
+        mask_val |= 2u16.pow(*i as u32)
+    }
+    mask_val
 }
 
 fn parse_line(line: &str) -> Machine {
@@ -96,50 +115,35 @@ fn parse_line(line: &str) -> Machine {
     }
 
     Machine {
-        indicators,
-        schematics,
+        indicators: get_bitmask_bool(&indicators),
+        schematics: schematics
+            .into_iter()
+            .map(|val| get_bitmask_indexes(&val))
+            .collect(),
         requirements,
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Debug)]
 struct SolState {
     cost: usize,
-    indicators: Vec<bool>,
-}
-
-impl Ord for SolState {
-    fn cmp(&self, other: &Self) -> Ordering {
-        other
-            .cost
-            .cmp(&self.cost)
-            .then_with(|| self.indicators.cmp(&other.indicators))
-    }
-}
-
-impl PartialOrd for SolState {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
+    indicators: u16,
 }
 
 fn turn_on_machine(machine: Machine) -> usize {
-    let mut queue: BinaryHeap<SolState> = BinaryHeap::new();
-    queue.push(SolState {
+    let mut queue: VecDeque<SolState> = VecDeque::new();
+    queue.push_back(SolState {
         cost: 0,
-        indicators: vec![false; machine.indicators.len()],
+        indicators: 0,
     });
 
-    while let Some(SolState { cost, indicators }) = queue.pop() {
+    while let Some(SolState { cost, indicators }) = queue.pop_front() {
         if indicators == machine.indicators {
             return cost;
         }
         for schematic in machine.schematics.iter() {
-            let mut new_indicators = indicators.clone();
-            for light_i in schematic {
-                new_indicators[*light_i] = !new_indicators[*light_i];
-            }
-            queue.push(SolState {
+            let new_indicators = indicators ^ schematic;
+            queue.push_back(SolState {
                 cost: cost + 1,
                 indicators: new_indicators,
             });
@@ -166,19 +170,22 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_get_bitmask_bool() {
+        assert_eq!(get_bitmask_bool(&vec![true, true, false, false]), 0b0011)
+    }
+
+    #[test]
+    fn test_get_bitmask_indexes() {
+        assert_eq!(get_bitmask_indexes(&vec![2, 3]), 0b1100)
+    }
+
+    #[test]
     fn test_parse_line() {
         assert_eq!(
             parse_line("[.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}"),
             Machine {
-                indicators: vec![false, true, true, false],
-                schematics: vec![
-                    vec![3],
-                    vec![1, 3],
-                    vec![2],
-                    vec![2, 3],
-                    vec![0, 2],
-                    vec![0, 1],
-                ],
+                indicators: 0b0110,
+                schematics: vec![0b1000, 0b1010, 0b0100, 0b1100, 0b0101, 0b0011],
                 requirements: vec![3, 5, 4, 7]
             }
         )
@@ -188,15 +195,8 @@ mod test {
     fn test_turn_on_machine_1() {
         assert_eq!(
             turn_on_machine(Machine {
-                indicators: vec![false, true, true, false],
-                schematics: vec![
-                    vec![3],
-                    vec![1, 3],
-                    vec![2],
-                    vec![2, 3],
-                    vec![0, 2],
-                    vec![0, 1],
-                ],
+                indicators: 0b0110,
+                schematics: vec![0b1000, 0b1010, 0b0100, 0b1100, 0b0101, 0b0011],
                 requirements: vec![3, 5, 4, 7]
             }),
             2
@@ -207,14 +207,8 @@ mod test {
     fn test_turn_on_machine_2() {
         assert_eq!(
             turn_on_machine(Machine {
-                indicators: vec![false, false, false, true, false],
-                schematics: vec![
-                    vec![0, 2, 3, 4],
-                    vec![2, 3],
-                    vec![0, 4],
-                    vec![0, 1, 2],
-                    vec![1, 2, 3, 4],
-                ],
+                indicators: 0b01000,
+                schematics: vec![0b11101, 0b01100, 0b10001, 0b00111, 0b11110],
                 requirements: vec![7, 5, 12, 7, 2]
             }),
             3
@@ -225,13 +219,8 @@ mod test {
     fn test_turn_on_machine_3() {
         assert_eq!(
             turn_on_machine(Machine {
-                indicators: vec![false, true, true, true, false, true],
-                schematics: vec![
-                    vec![0, 1, 2, 3, 4],
-                    vec![0, 3, 4],
-                    vec![0, 1, 2, 4, 5],
-                    vec![1, 2],
-                ],
+                indicators: 0b101110,
+                schematics: vec![0b011111, 0b011001, 0b110111, 0b000110],
                 requirements: vec![10, 11, 11, 5, 10, 5]
             }),
             2
@@ -243,36 +232,18 @@ mod test {
         assert_eq!(
             turn_on_all(vec![
                 Machine {
-                    indicators: vec![false, true, true, false],
-                    schematics: vec![
-                        vec![3],
-                        vec![1, 3],
-                        vec![2],
-                        vec![2, 3],
-                        vec![0, 2],
-                        vec![0, 1],
-                    ],
+                    indicators: 0b0110,
+                    schematics: vec![0b1000, 0b1010, 0b0100, 0b1100, 0b0101, 0b0011],
                     requirements: vec![3, 5, 4, 7]
                 },
                 Machine {
-                    indicators: vec![false, false, false, true, false],
-                    schematics: vec![
-                        vec![0, 2, 3, 4],
-                        vec![2, 3],
-                        vec![0, 4],
-                        vec![0, 1, 2],
-                        vec![1, 2, 3, 4],
-                    ],
+                    indicators: 0b01000,
+                    schematics: vec![0b11101, 0b01100, 0b10001, 0b00111, 0b11110,],
                     requirements: vec![7, 5, 12, 7, 2]
                 },
                 Machine {
-                    indicators: vec![false, true, true, true, false, true],
-                    schematics: vec![
-                        vec![0, 1, 2, 3, 4],
-                        vec![0, 3, 4],
-                        vec![0, 1, 2, 4, 5],
-                        vec![1, 2],
-                    ],
+                    indicators: 0b101110,
+                    schematics: vec![0b011111, 0b011001, 0b110111, 0b000110,],
                     requirements: vec![10, 11, 11, 5, 10, 5]
                 }
             ]),
